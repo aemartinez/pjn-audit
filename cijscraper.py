@@ -12,6 +12,7 @@ import collections
 import json
 import shutil
 from PIL import Image
+import time
 
 CIJ_URL = "https://www.cij.gov.ar/sorteos"
 CIJ_CAPTCHA_URL = " https://www.cij.gov.ar/lib/securimage/securimage_show.php"
@@ -40,24 +41,6 @@ class CIJScraper:
 
         captcha_code = input("Escribir captcha: ")
 
-        # POST REQUEST EXAMPLE
-        # Request URL: https://www.cij.gov.ar/sorteos
-        # Request Method: POST
-        # 
-        # fecha_exacta_juzgados: 27/02/2020
-        # selector: rango
-        # fecha_juzgados_desde: 2019-02-01
-        # fecha_juzgados_desde_aux: 01/02/2019
-        # fecha_juzgados_hasta: 2020-02-10
-        # fecha_juzgados_hasta_aux: 10/02/2020
-        # oficina: 
-        # nombre[]: 
-        # paginaS1: 0
-        # paginaS2: 0
-        # origenPaginado: S1
-        # paginado: 0
-        # captcha_code: sC5E
-        # btn: Buscar
         post_data = {
             'selector': 'rango',
             'fecha_juzgados_desde': '2019-02-01',
@@ -71,33 +54,50 @@ class CIJScraper:
             'captcha_code': captcha_code,
             'btn': 'Buscar',
         }
-        resp = s.post(self._base_url, data = post_data, cookies=cookies)
-        d = pq.PyQuery(resp.text)
-        with open('web.html', 'w') as fp:
-            fp.write(d.html())
-        results = d('#sorteos-resultado').children(".result")
-        for res in results.items():
-            datos = res("ul li")
-            
-            # === Ejemplo de datos de un sorteo: ===
-            # 
-            # Fecha de Asignación: 11/02/2020
-            # Expediente: CFP 619/2020
-            # Tipo: OTROS ORGANISMOS
-            # Motivo Asignación: SORTEO
-            # Dependencia Asignada: JUZGADO CRIMINAL Y CORRECCIONAL FEDERAL 9
-            # Denunciantes: IDENTIDAD RESERVADA - IDENTIDAD RESERVADA -
-            # Denunciados: CANUT HNOS SRL -
-            # Delitos: INFRACCION LEY 23.737 (ART.44) -
-            # Origen: MINISTERIO DE SEGURIDAD
-            # 
-            # ======================================
-            sorteo = DatosSorteo()
-            for dato in datos.items():
-                dato = dato.text().split(":")
-                sorteo[CAMPOS_MAP[dato[0]]] = CIJScraper.sanitizar(dato[1])
-            lista_sorteos.append(sorteo)
+        print("captcha_code", captcha_code)
+        print("cookies", cookies)
+        page_index = 0
+        more_data = True
+        while(more_data):
+            time.sleep(1)
+            print("Página: ", page_index)
+            post_data['paginaS1'] = str(page_index)
+            resp = s.post(self._base_url, data=post_data, cookies=cookies)
+            d = pq.PyQuery(resp.text)
+            with open('web.html', 'w') as fp:
+                fp.write(d.html())
+            results = d('#sorteos-resultado').children(".result")
+            more_data = False
+            for res in results.items():
+                datos = res("ul li")
+                
+                # === Ejemplo de datos de un sorteo: ===
+                # 
+                # Fecha de Asignación: 11/02/2020
+                # Expediente: CFP 619/2020
+                # Tipo: OTROS ORGANISMOS
+                # Motivo Asignación: SORTEO
+                # Dependencia Asignada: JUZGADO CRIMINAL Y CORRECCIONAL FEDERAL 9
+                # Denunciantes: IDENTIDAD RESERVADA - IDENTIDAD RESERVADA -
+                # Denunciados: CANUT HNOS SRL -
+                # Delitos: INFRACCION LEY 23.737 (ART.44) -
+                # Origen: MINISTERIO DE SEGURIDAD
+                # 
+                # ======================================
+                sorteo = DatosSorteo()
+                for dato in datos.items():
+                    more_data = True
+                    dato = dato.text().split(":")
+                    sorteo[CAMPOS_MAP[dato[0]]] = CIJScraper.sanitizar(dato[1])
+                lista_sorteos.append(sorteo)
 
+            page_index += 1
+            post_data['paginado'] = '1'
+            post_data['captcha_code'] = ''
+
+        s.close()
+
+        print("Cantidad de sorteos obtenidos: ", len(lista_sorteos))
         with open(filename, 'w') as fp:
             json.dump(lista_sorteos, fp)
             # print(sorteo)
